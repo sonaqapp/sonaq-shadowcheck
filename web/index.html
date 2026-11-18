@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ShadowCheck — Twitch channel audit</title>
+  <meta name="description" content="ShadowCheck audits any Twitch channel: account status, search indexing, metadata, VOD archiving and live health." />
+  <style>
+    :root {
+      --bg: #08090f;
+      --panel: #11131d;
+      --panel-2: #151827;
+      --border: rgba(139, 92, 246, 0.22);
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #8b5cf6;
+      --cyan: #06b6d4;
+      --ok: #22c55e;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --info: #60a5fa;
+      --gradient: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 50%, #06b6d4 100%);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      padding: 32px 16px 48px;
+      background-image:
+        radial-gradient(circle at 12% 0%, rgba(139, 92, 246, 0.16), transparent 38%),
+        radial-gradient(circle at 92% 92%, rgba(6, 182, 212, 0.12), transparent 40%);
+      background-attachment: fixed;
+    }
+
+    .wrap { width: 100%; max-width: 860px; margin: 0 auto; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 1.12rem; font-weight: 700; }
+
+    .mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      background: var(--gradient);
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
+      font-size: 1rem;
+      color: #fff;
+    }
+
+    .tag {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      border: 1px solid rgba(6, 182, 212, 0.32);
+      background: rgba(6, 182, 212, 0.08);
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    h1 { font-size: 1.5rem; line-height: 1.25; letter-spacing: -0.01em; }
+    h1 span { background: var(--gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+    .lead { margin-top: 6px; color: var(--muted); font-size: 0.92rem; }
+
+    .search-form { display: flex; gap: 10px; margin-top: 20px; }
+
+    .input-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: #0b0d15;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 11px;
+      padding: 0 14px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      min-width: 0;
+    }
+
+    .input-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+    }
+
+    .prefix { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: 0;
+      outline: 0;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.95rem;
+      padding: 13px 6px;
+    }
+
+    input[type="text"]::placeholder { color: #6b7280; }
+
+    button { font: inherit; cursor: pointer; border: 0; }
+
+    .primary {
+      padding: 13px 20px;
+      border-radius: 11px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--gradient);
+      box-shadow: 0 10px 26px rgba(99, 102, 241, 0.28);
+      transition: filter 0.15s ease, transform 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .primary:hover { filter: brightness(1.08); }
+    .primary:active { transform: translateY(1px); }
+    .primary:disabled { opacity: 0.65; cursor: progress; }
+
+    .error {
+      display: none;
+      margin-top: 14px;
+      padding: 11px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      background: rgba(248, 113, 113, 0.09);
+      color: #fecaca;
+      font-size: 0.88rem;
+    }
+
+    .error.show { display: block; }
+
+    #auditResult { margin-top: 22px; }
+
+    .result-top {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      flex-wrap: wrap;
+    }
+
+    .avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      object-fit: cover;
+      background: #0b0d15;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      flex: 0 0 auto;
+    }
+
+    .identity { flex: 1; min-width: 180px; }
+
+    .name-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .name { font-size: 1.16rem; font-weight: 700; }
+
+    .state {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--muted);
+    }
+
+    .state.live { color: #fca5a5; border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.1); }
+    .state.live::before { content: "● "; color: var(--bad); }
+
+    .channel-link { color: var(--muted); font-size: 0.82rem; text-decoration: none; }
+    .channel-link:hover { color: var(--cyan); }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+    .chip {
+      font-size: 0.74rem;
+      color: #d1d5db;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 8px;
+      padding: 3px 8px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chip b { color: var(--muted); font-weight: 600; margin-right: 5px; }
+
+    .score {
+      --pct: 0;
+      --score-color: var(--ok);
+      width: 104px;
+      height: 104px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      background: conic-gradient(var(--score-color) calc(var(--pct) * 1%), rgba(255, 255, 255, 0.07) 0);
+      position: relative;
+      transition: background 0.3s ease;
+    }
+
+    .score::before {
+      content: "";
+      position: absolute;
+      inset: 7px;
+      border-radius: 50%;
+      background: #0c0e17;
+    }
+
+    .score.warning { --score-color: var(--warn); }
+    .score.critical { --score-color: var(--bad); }
+
+    .score-inner { position: relative; text-align: center; line-height: 1.1; }
+    .score-value { font-size: 1.7rem; font-weight: 800; color: var(--score-color); }
+    .score-caption { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 3px; }
+
+    .checks { margin-top: 8px; }
+
+    .check {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 12px;
+      padding: 13px 15px;
+      margin-top: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      background: var(--panel-2);
+    }
+
+    .check-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 0.82rem;
+      font-weight: 800;
+      margin-top: 1px;
+    }
+
+    .check.pass .check-icon { color: var(--ok); background: rgba(34, 197, 94, 0.13); }
+    .check.warn .check-icon { color: var(--warn); background: rgba(251, 191, 36, 0.13); }
+    .check.fail .check-icon { color: var(--bad); background: rgba(248, 113, 113, 0.13); }
+    .check.info .check-icon { color: var(--info); background: rgba(96, 165, 250, 0.13); }
+
+    .check-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .check-title { font-size: 0.9rem; font-weight: 700; }
+
+    .check-badge {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 1px 7px;
+      border-radius: 999px;
+      color: var(--muted);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .check.pass .check-badge { color: var(--ok); border-color: rgba(34, 197, 94, 0.35); }
+    .check.warn .check-badge { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); }
+    .check.fail .check-badge { color: var(--bad); border-color: rgba(248, 113, 113, 0.35); }
+    .check.info .check-badge { color: var(--info); border-color: rgba(96, 165, 250, 0.35); }
+
+    .check-detail { font-size: 0.84rem; color: #cbd5e1; margin-top: 3px; }
+    .check-rec { font-size: 0.8rem; color: var(--muted); margin-top: 5px; }
+    .check-rec::before { content: "→ "; color: var(--cyan); }
+
+    .result-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .footer-note { font-size: 0.76rem; color: var(--muted); }
+    .footer-actions { display: flex; align-items: center; gap: 10px; }
+
+    .secondary {
+      padding: 7px 12px;
+      border-radius: 9px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text);
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+
+    .secondary:hover { background: rgba(139, 92, 246, 0.2); }
+
+    .page-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 26px;
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+
+    .page-footer a { color: var(--muted); text-decoration: none; }
+    .page-footer a:hover { color: var(--cyan); }
+
+    @media (max-width: 560px) {
+      .panel { padding: 18px; }
+      .search-form { flex-direction: column; }
+      .primary { width: 100%; }
+      .score { width: 88px; height: 88px; }
+      .score-value { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand"><span class="mark">◈</span> ShadowCheck</div>
+      <span class="tag">open source · v0.3.0</span>
+    </header>
+
+    <main class="panel">
+      <h1>Audit any <span>Twitch channel</span></h1>
+      <p class="lead">Account status, search indexing, metadata, VOD archiving and live health — in one pass.</p>
+
+      <form class="search-form" id="auditForm">
+        <div class="input-wrap">
+          <span class="prefix">twitch.tv/</span>
+          <input type="text" id="channelInput" placeholder="channel name" maxlength="60"
+                 autocomplete="off" spellcheck="false" aria-label="Twitch channel name" />
+        </div>
+        <button type="submit" class="primary" id="auditBtn">Run check</button>
+      </form>
+
+      <div class="error" id="auditError" role="alert"></div>
+
+      <section id="auditResult" hidden>
+        <div class="result-top">
+          <img class="avatar" id="scAvatar" alt="" />
+          <div class="identity">
+            <div class="name-row">
+              <span class="name" id="scName"></span>
+              <span class="state" id="scState"></span>
+            </div>
+            <a class="channel-link" id="scLink" target="_blank" rel="noopener"></a>
+            <div class="chips" id="scChips"></div>
+          </div>
+          <div class="score" id="scoreBox">
+            <div class="score-inner">
+              <div class="score-value" id="scoreValue">0</div>
+              <div class="score-caption" id="scoreStatus">score</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="checks" id="scChecks"></div>
+
+        <div class="result-footer">
+          <span class="footer-note" id="scFooter"></span>
+          <div class="footer-actions">
+            <button type="button" class="secondary" id="shareBtn">Copy share link</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <span>ShadowCheck is free and open source under the MIT license.</span>
+      <a href="https://github.com/sonaqapp/sonaq-shadowcheck" target="_blank" rel="noopener">github.com/sonaqapp/sonaq-shadowcheck</a>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var form = document.getElementById("auditForm");
+      var input = document.getElementById("channelInput");
+      var button = document.getElementById("auditBtn");
+      var errorBox = document.getElementById("auditError");
+      var result = document.getElementById("auditResult");
+
+      var avatar = document.getElementById("scAvatar");
+      var nameEl = document.getElementById("scName");
+      var stateEl = document.getElementById("scState");
+      var linkEl = document.getElementById("scLink");
+      var chipsEl = document.getElementById("scChips");
+      var scoreBox = document.getElementById("scoreBox");
+      var scoreValue = document.getElementById("scoreValue");
+      var scoreStatus = document.getElementById("scoreStatus");
+      var checksEl = document.getElementById("scChecks");
+      var footerEl = document.getElementById("scFooter");
+      var shareBtn = document.getElementById("shareBtn");
+
+      var STATUS_LABEL = { healthy: "healthy", warning: "needs work", critical: "critical" };
+      var ICONS = { pass: "✓", warn: "!", fail: "×", info: "i" };
+
+      function esc(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+        });
+      }
+
+      function chip(label, value) {
+        return '<span class="chip"><b>' + esc(label) + "</b>" + esc(value) + "</span>";
+      }
+
+      function setError(message) {
+        errorBox.textContent = message || "";
+        errorBox.classList.toggle("show", Boolean(message));
+      }
+
+      function setLoading(loading) {
+        button.disabled = loading;
+        button.textContent = loading ? "Checking…" : "Run check";
+      }
+
+      function render(report) {
+        var channel = report.channel || {};
+
+        nameEl.textContent = channel.display_name || channel.login || "Unknown channel";
+        stateEl.textContent = channel.is_live ? "live" : "offline";
+        stateEl.classList.toggle("live", Boolean(channel.is_live));
+
+        linkEl.textContent = channel.url || ("https://twitch.tv/" + (channel.login || ""));
+        linkEl.href = channel.url || "https://twitch.tv/";
+
+        if (channel.profile_image_url) {
+          avatar.src = channel.profile_image_url;
+          avatar.alt = (channel.display_name || channel.login) + " avatar";
+          avatar.style.visibility = "visible";
+        } else {
+          avatar.removeAttribute("src");
+          avatar.style.visibility = "hidden";
+        }
+
+        var chips = [
+          chip("Category", channel.game_name || "not set"),
+          chip("Language", channel.language ? channel.language.toUpperCase() : "not set"),
+          chip("Account age", (channel.account_age_days || 0) + " days"),
+          chip("Search", channel.search_indexed ? "indexed" : "not indexed"),
+          chip("VODs", String(channel.vod_count || 0)),
+          chip("Status", channel.broadcaster_type || "standard")
+        ];
+        if (channel.is_mature) chips.push(chip("Mature", "yes"));
+        if (channel.tags && channel.tags.length) chips.push(chip("Tags", channel.tags.join(", ")));
+        chipsEl.innerHTML = chips.join("");
+
+        var status = report.status || "critical";
+        scoreBox.className = "score " + status;
+        scoreBox.style.setProperty("--pct", Math.max(0, Math.min(100, Number(report.score) || 0)));
+        scoreValue.textContent = String(Number(report.score) || 0);
+        scoreStatus.textContent = STATUS_LABEL[status] || status;
+
+        checksEl.innerHTML = (report.checks || []).map(function (check) {
+          var recommendation = "";
+          if (check.status !== "pass" && check.recommendation) {
+            recommendation = '<p class="check-rec">' + esc(check.recommendation) + "</p>";
+          }
+          return '<article class="check ' + esc(check.status) + '">' +
+            '<div class="check-icon">' + esc(ICONS[check.status] || "i") + "</div>" +
+            "<div>" +
+            '<div class="check-head"><span class="check-title">' + esc(check.title) + "</span>" +
+            '<span class="check-badge">' + esc(check.status) + "</span></div>" +
+            '<p class="check-detail">' + esc(check.detail) + "</p>" +
+            recommendation +
+            "</div></article>";
+        }).join("");
+
+        var checked = report.checked_at ? new Date(report.checked_at).toLocaleString() : "just now";
+        footerEl.textContent = "Checked " + checked + (report.cached ? " · cached result" : "");
+      }
+
+      function checkChannel(raw) {
+        var channel = String(raw || "").trim();
+        if (!channel) {
+          setError("Please enter a Twitch channel name.");
+          return;
+        }
+
+        setError("");
+        setLoading(true);
+
+        fetch("/api/shadowcheck", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel: channel })
+        }).then(function (response) {
+          return response.json().catch(function () {
+            return { error: "Unexpected server response (" + response.status + ")." };
+          }).then(function (data) {
+            if (!response.ok) throw new Error(data.error || "Audit failed (" + response.status + ").");
+            return data;
+          });
+        }).then(function (report) {
+          result.hidden = false;
+          render(report);
+          input.value = report.channel.login;
+          var url = new URL(window.location.href);
+          url.searchParams.set("channel", report.channel.login);
+          history.replaceState(null, "", url.pathname + url.search);
+        }).catch(function (err) {
+          result.hidden = true;
+          setError(err && err.message ? err.message : "Audit failed. Please try again.");
+        }).finally(function () {
+          setLoading(false);
+        });
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        checkChannel(input.value);
+      });
+
+      avatar.addEventListener("error", function () {
+        avatar.style.visibility = "hidden";
+      });
+
+      shareBtn.addEventListener("click", function () {
+        var link = window.location.href;
+        var done = function () {
+          var previous = shareBtn.textContent;
+          shareBtn.textContent = "Copied!";
+          window.setTimeout(function () { shareBtn.textContent = previous; }, 1600);
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(link).then(done, function () { window.prompt("Copy this link:", link); });
+          return;
+        }
+        window.prompt("Copy this link:", link);
+      });
+
+      var initial = new URLSearchParams(window.location.search).get("channel");
+      if (initial) {
+        input.value = initial;
+        checkChannel(initial);
+      }
+
+    })();
+  </script>
+</body>
+</html>
